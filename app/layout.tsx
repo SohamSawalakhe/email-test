@@ -11,9 +11,8 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'Mail by GPSERP',
   description: 'AI-powered email outreach platform for personalized cold emails — Mail by GPSERP',
-  generator: 'v0.app',
   verification: {
-    google: '4cip6EUw-KPPk_WrnhitFBdcrTLFj_IooYSwb6sAB3M',
+    google: 'l8XGPLZkoAaO3sVYk_lZhJDPltoGiqT0kmi9wAxpP68',
   },
   icons: {
     icon: [
