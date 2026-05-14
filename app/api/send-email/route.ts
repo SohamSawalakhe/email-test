@@ -7,7 +7,7 @@ import { google } from "googleapis";
 
 export async function POST(req: Request) {
   try {
-    const { to, emailData, draftId, attachments } = await req.json();
+    const { to, cc, emailData, draftId, attachments } = await req.json();
     const session = await getServerSession(authOptions);
 
     if (!session?.user?.email) {
@@ -103,6 +103,7 @@ export async function POST(req: Request) {
     const messageParts = [
       `From: ${session.user.name ?? "Outreach"} <${session.user.email}>`,
       `To: ${to}`,
+      ...(cc ? [`Cc: ${cc}`] : []),
       `Subject: ${utf8Subject}`,
       "MIME-Version: 1.0",
       `Content-Type: multipart/mixed; boundary="${boundary}"`,

@@ -6,7 +6,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { InputSection } from "@/components/dashboard/input-section";
-import { ConfigPanel } from "@/components/dashboard/config-panel";
+import { ConfigPanel, BrandDesignPanel } from "@/components/dashboard/config-panel";
 import { ChatInterface } from "@/components/dashboard/chat-interface";
 import { PreviewGrid } from "@/components/dashboard/preview-grid";
 import { ActionBar } from "@/components/dashboard/action-bar";
@@ -18,23 +18,26 @@ interface EmailPreview {
   recipientEmail?: string;
 }
 
+import { useDashboard } from "../context/dashboard-context";
+
 export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  // 1. All Hooks Must Be At The Top
-  const [csvData, setCsvData] = useState<string[][]>([]);
-  const [hasDataHeader, setHasDataHeader] = useState(true);
-  const [prompt, setPrompt] = useState(
-    "Write a friendly cold email about our SaaS product that helps teams collaborate better. Keep it concise, professional, and include a clear call-to-action."
-  );
-  const [model, setModel] = useState("gemini-1.5-pro");
-  const [previews, setPreviews] = useState<EmailPreview[]>([]);
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  // 1. Use Global Context for Campaign Data
+  const {
+    csvData, hasDataHeader, prompt, model, previews, headers,
+    totalRecipients, activeTab, fileName, manualInput, parsedData,
+    failedEmails, isProcessing, ccEmail,
+    setCsvData, setHasDataHeader, setPrompt, setModel, setPreviews,
+    setHeaders, setIsProcessing, setFailedEmails, setTotalRecipients,
+    setFileName, setActiveTab, setManualInput, setParsedData, setCcEmail,
+    handleDataChange
+  } = useDashboard();
+
+  // 2. Local Component States (Safe to reset or kept simple)
   const [isSending, setIsSending] = useState(false);
   const [sentEmails, setSentEmails] = useState(0);
-  const [failedEmails, setFailedEmails] = useState<Set<number>>(new Set());
   const [brands, setBrands] = useState<any[]>([]);
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
 
@@ -94,7 +97,7 @@ export default function Dashboard() {
 
     // Apply basic brand context
     if (brand.tone) setPrompt(p => p.includes(`Tone: ${brand.tone}`) ? p : `${p}\n\nTone: ${brand.tone}`);
-    
+
     // Apply default CTA if set
     if (brand.defaultCtaText) setCtaText(brand.defaultCtaText);
     if (brand.defaultCtaLink) setCtaLink(brand.defaultCtaLink);
@@ -130,15 +133,6 @@ export default function Dashboard() {
     }
   }, [selectedBrandId, brands]);
 
-  const handleDataChange = useCallback((data: string[][], isHeader: boolean = true) => {
-    setCsvData(data);
-    setHasDataHeader(isHeader);
-    setPreviews([]);
-    setHeaders([]);
-    setSentEmails(0);
-    setFailedEmails(new Set());
-  }, []);
-
   const handleProcess = useCallback(async () => {
     if (csvData.length === 0) return;
     setIsProcessing(true);
@@ -148,8 +142,9 @@ export default function Dashboard() {
     try {
       const hasHeader = hasDataHeader;
       const dataRows = hasHeader ? csvData.slice(1) : csvData;
+      setTotalRecipients(dataRows.length);
       let currentCampaignId: string | undefined = undefined;
-      const BATCH_SIZE = 8;
+      const BATCH_SIZE = 4;
 
       for (let i = 0; i < dataRows.length; i += BATCH_SIZE) {
         const batchRows = dataRows.slice(i, i + BATCH_SIZE);
@@ -265,10 +260,10 @@ export default function Dashboard() {
           }
 
           if (includeSignature) {
-            const sigHtml = (customSignatureHtml && customSignatureHtml !== "manual") 
-              ? customSignatureHtml 
+            const sigHtml = (customSignatureHtml && customSignatureHtml !== "manual")
+              ? customSignatureHtml
               : signature.replace(/\n/g, '<br/>');
-            
+
             if (sigHtml) {
               const sigBlock = parsedPayload.blocks.find((b: any) => b.type === 'signature');
               if (sigBlock) {
@@ -283,6 +278,7 @@ export default function Dashboard() {
 
         await axios.post("/api/send-email", {
           to: recipientEmail || "unknown@example.com",
+          cc: ccEmail,
           emailData: parsedPayload,
           attachments: attachments
         });
@@ -336,88 +332,139 @@ export default function Dashboard() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="px-6 py-4 rounded-2xl bg-accent/5 border border-accent/20 flex items-center gap-4"
+            className="px-6 py-3 rounded-full bg-success/5 border border-success/20 flex items-center gap-4 shadow-sm"
           >
+            <div className="w-2.5 h-2.5 rounded-full bg-success" />
             <div className="flex flex-col">
-              <span className="text-xs font-bold text-foreground">Sender Configured</span>
-              <span className="text-[10px] text-muted-foreground">{session?.user?.email}</span>
+              <span className="text-[10px] font-bold text-success uppercase tracking-widest leading-tight">Sender:</span>
+              <span className="text-[10px] font-bold text-success uppercase tracking-widest leading-tight">{session?.user?.email}</span>
             </div>
           </motion.div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-5 lg:grid-cols-2 grid-cols-1">
-          <div className="space-y-6 xl:col-span-2">
-            <InputSection onDataChange={handleDataChange} />
-            <ConfigPanel
-              prompt={prompt}
-              onPromptChange={setPrompt}
-              model={model}
-              onModelChange={setModel}
-              session={session}
-              signature={signature}
-              onSignatureChange={setSignature}
-              ctaText={ctaText}
-              onCtaTextChange={setCtaText}
-              ctaLink={ctaLink}
-              onCtaLinkChange={setCtaLink}
-              includeHeaderImage={includeHeaderImage}
-              onIncludeHeaderImageChange={setIncludeHeaderImage}
-              includeCta={includeCta}
-              onIncludeCtaChange={setIncludeCta}
-              includeSignature={includeSignature}
-              onIncludeSignatureChange={setIncludeSignature}
-              customHeaderImage={customHeaderImage}
-              onCustomHeaderImageChange={(val) => {
-                setCustomHeaderImage(val);
-                saveSettings(val, customSignatureHtml);
-              }}
-              customSignatureHtml={customSignatureHtml}
-              onCustomSignatureHtmlChange={(val) => {
-                setCustomSignatureHtml(val);
-                saveSettings(customHeaderImage, val);
-              }}
-              brands={brands}
-              selectedBrandId={selectedBrandId}
-              onBrandChange={setSelectedBrandId}
-              attachments={attachments}
-              onAttachmentsChange={setAttachments}
-            />
-            <ChatInterface
-              onApplyPrompt={setPrompt}
-              csvHeaders={csvData.length > 0 ? csvData[0] : []}
-              session={session}
-            />
+        <div className="space-y-8">
+          {/* Top Row: Data Input & Brand Assets (Aligned Heights) */}
+          <div className="grid gap-8 xl:grid-cols-2 grid-cols-1">
+            <div className="h-auto xl:h-[520px]">
+              <InputSection 
+                onDataChange={handleDataChange} 
+                activeTab={activeTab}
+                fileName={fileName}
+                parsedData={parsedData}
+                manualInput={manualInput}
+                onManualInputChange={setManualInput}
+              />
+            </div>
+            <div className="h-auto xl:h-[520px]">
+              <BrandDesignPanel
+                session={session}
+                signature={signature}
+                onSignatureChange={setSignature}
+                ctaText={ctaText}
+                onCtaTextChange={setCtaText}
+                ctaLink={ctaLink}
+                onCtaLinkChange={setCtaLink}
+                includeHeaderImage={includeHeaderImage}
+                onIncludeHeaderImageChange={setIncludeHeaderImage}
+                includeCta={includeCta}
+                onIncludeCtaChange={setIncludeCta}
+                includeSignature={includeSignature}
+                onIncludeSignatureChange={setIncludeSignature}
+                customHeaderImage={customHeaderImage}
+                onCustomHeaderImageChange={(val) => {
+                  setCustomHeaderImage(val);
+                  saveSettings(val, customSignatureHtml);
+                }}
+                customSignatureHtml={customSignatureHtml}
+                onCustomSignatureHtmlChange={(val) => {
+                  setCustomSignatureHtml(val);
+                  saveSettings(customHeaderImage, val);
+                }}
+                brands={brands}
+                selectedBrandId={selectedBrandId}
+                onBrandChange={setSelectedBrandId}
+                attachments={attachments}
+                onAttachmentsChange={setAttachments}
+              />
+            </div>
           </div>
 
-          <div className="xl:sticky xl:top-24 xl:self-start xl:col-span-3">
-            <PreviewGrid
-              previews={previews}
-              isProcessing={isProcessing}
-              onGenerate={handleProcess}
-              onPreviewEdit={handlePreviewEdit}
-              hasData={csvData.length > 0}
-              signature={signature}
-              ctaText={ctaText}
-              ctaLink={ctaLink}
-              customHeaderImage={customHeaderImage}
-              customSignatureHtml={customSignatureHtml}
-              includeHeaderImage={includeHeaderImage}
-              includeCta={includeCta}
-              includeSignature={includeSignature}
-              failedIndices={failedEmails}
-            />
+          {/* Bottom Row: Configuration & Preview */}
+          <div className="grid gap-8 xl:grid-cols-2 grid-cols-1">
+            <div className="space-y-8">
+              <ConfigPanel
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                model={model}
+                onModelChange={setModel}
+                ccEmail={ccEmail}
+                onCcEmailChange={setCcEmail}
+                isProcessing={isProcessing}
+                onGenerate={handleProcess}
+                hasData={csvData.length > 0}
+              />
+              <ChatInterface
+                onApplyPrompt={setPrompt}
+                csvHeaders={csvData.length > 0 ? csvData[0] : []}
+                session={session}
+              />
+            </div>
+
+            <div className="relative hidden xl:block">
+              <div className="absolute inset-0">
+                <PreviewGrid
+                  previews={previews}
+                  isProcessing={isProcessing}
+                  totalRecipients={totalRecipients}
+                  onPreviewEdit={handlePreviewEdit}
+                  hasData={csvData.length > 0}
+                  signature={signature}
+                  ctaText={ctaText}
+                  ctaLink={ctaLink}
+                  customHeaderImage={customHeaderImage}
+                  customSignatureHtml={customSignatureHtml}
+                  includeHeaderImage={includeHeaderImage}
+                  includeCta={includeCta}
+                  includeSignature={includeSignature}
+                  failedIndices={failedEmails}
+                  ccEmail={ccEmail}
+                />
+              </div>
+            </div>
+            {/* Mobile/Tablet fallback where it shouldn't be absolute */}
+            <div className="xl:hidden h-[800px]">
+              <PreviewGrid
+                previews={previews}
+                isProcessing={isProcessing}
+                totalRecipients={totalRecipients}
+                onPreviewEdit={handlePreviewEdit}
+                hasData={csvData.length > 0}
+                signature={signature}
+                ctaText={ctaText}
+                ctaLink={ctaLink}
+                customHeaderImage={customHeaderImage}
+                customSignatureHtml={customSignatureHtml}
+                includeHeaderImage={includeHeaderImage}
+                includeCta={includeCta}
+                includeSignature={includeSignature}
+                failedIndices={failedEmails}
+                ccEmail={ccEmail}
+              />
+            </div>
           </div>
         </div>
       </main>
 
-      <ActionBar
-        totalEmails={previews.length}
-        sentEmails={sentEmails}
-        failedEmails={failedEmails.size}
-        isSending={isSending}
-        onSendAll={handleSendAll}
-        hasGeneratedPreviews={previews.length > 0}
-      />
+      {totalRecipients > 0 && previews.length === totalRecipients && !isProcessing && (
+        <ActionBar
+          totalEmails={totalRecipients}
+          sentEmails={sentEmails}
+          failedEmails={failedEmails.size}
+          isSending={isSending}
+          onSendAll={handleSendAll}
+          hasGeneratedPreviews={previews.length > 0}
+        />
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/app/NextAuthProvider'
+import { DashboardProvider } from '../context/dashboard-context'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Toaster } from 'sonner'
 import './globals.css'
@@ -97,10 +98,12 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <DashboardShell>
-              {children}
-              <Toaster position="bottom-right" richColors />
-            </DashboardShell>
+            <DashboardProvider>
+              <DashboardShell>
+                {children}
+                <Toaster position="bottom-right" richColors />
+              </DashboardShell>
+            </DashboardProvider>
           </ThemeProvider>
         </NextAuthProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}

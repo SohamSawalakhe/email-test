@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings2, ChevronDown, Sparkles, Brain, Zap, Check, Building2 } from "lucide-react";
+import { Settings2, ChevronDown, Sparkles, Brain, Zap, Check, Building2, Upload, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 
@@ -10,6 +10,11 @@ interface ConfigPanelProps {
   onPromptChange: (prompt: string) => void;
   model: string;
   onModelChange: (model: string) => void;
+  isProcessing?: boolean;
+  onGenerate?: () => void;
+  hasData?: boolean;
+  ccEmail?: string;
+  onCcEmailChange?: (val: string) => void;
   session: any;
   signature: string;
   onSignatureChange: (val: string) => void;
@@ -34,11 +39,19 @@ interface ConfigPanelProps {
   onAttachmentsChange?: (val: { name: string, type: string, content: string }[]) => void;
 }
 
-export function ConfigPanel({
-  prompt,
-  onPromptChange,
-  model,
-  onModelChange,
+// Helper to handle image uploads
+const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
+  const file = e.target.files?.[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      callback(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+export function BrandDesignPanel({
   session,
   signature,
   onSignatureChange,
@@ -61,54 +74,9 @@ export function ConfigPanel({
   onBrandChange,
   attachments,
   onAttachmentsChange,
-}: ConfigPanelProps) {
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+}: Partial<ConfigPanelProps>) {
   const [openSection, setOpenSection] = useState<"header" | "cta" | "signature" | "attachments" | null>(null);
-  const [availableModels, setAvailableModels] = useState<any[]>([]);
-  const [isLoadingModels, setIsLoadingModels] = useState(true);
-
-  useEffect(() => {
-    async function fetchModels() {
-      try {
-        const res = await fetch("/api/models");
-        const data = await res.json();
-        if (data.models) {
-          const mapped = data.models.map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            description: m.description || "Gemini generative model",
-            icon: m.id.includes("pro") ? Brain : (m.id.includes("flash") ? Zap : Sparkles),
-            badge: m.id.includes("preview") ? "Preview" : (m.id.includes("3") ? "New" : null),
-            color: m.id.includes("pro") ? "from-violet-500 to-purple-500" : (m.id.includes("flash") ? "from-amber-500 to-orange-500" : "from-blue-500 to-cyan-500")
-          }));
-          setAvailableModels(mapped);
-
-          // Set default model if current one is not in the list
-          if (!model && mapped.length > 0) {
-            const defaultModel = mapped.find((mo: any) => mo.id.includes("3-flash")) || mapped[0];
-            onModelChange(defaultModel.id);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading models:", e);
-      } finally {
-        setIsLoadingModels(false);
-      }
-    }
-    fetchModels();
-  }, [onModelChange, model]);
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        callback(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const signatureRef = useRef<HTMLDivElement>(null);
 
   const handleAttachmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -131,19 +99,11 @@ export function ConfigPanel({
     }
   };
 
-  const signatureRef = useRef<HTMLDivElement>(null);
-  // We can remove the useEffect because we will use dangerouslySetInnerHTML for initial mount,
-  // and manage updates through onBlur. If we need to force updates, we would use a key.
-
   const handleSignaturePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    // Let text/html pass through normally, but try to catch direct image pastes (like from snipping tool)
     const items = e.clipboardData?.items;
     if (!items) return;
-
-    let hasImage = false;
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.indexOf('image') !== -1) {
-        hasImage = true;
         const file = items[i].getAsFile();
         if (file) {
           e.preventDefault();
@@ -154,22 +114,288 @@ export function ConfigPanel({
           };
           reader.readAsDataURL(file);
         }
-        break; // Only handle the first image to prevent duplicate inserts if there are multiple formats
+        break;
       }
     }
   };
 
-  const selectedModel = availableModels.find((m) => m.id === model) || availableModels[0] || { id: "", name: "Select Model", icon: Brain, color: "from-gray-500 to-gray-600", description: "Loading...", badge: null };
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-border bg-card overflow-hidden shadow-xl shadow-accent/5 lg:h-full flex flex-col"
+    >
+      <div className="p-4 sm:p-6 lg:h-full flex flex-col min-h-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_0.45fr] gap-6 lg:gap-8 lg:h-full min-h-0">
+          <div className="flex flex-col space-y-6 lg:overflow-y-auto lg:pr-2 scrollbar-thin scrollbar-thumb-secondary scrollbar-track-transparent">
+            {/* Brand Selection */}
+            <div className="space-y-3 shrink-0">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-primary" />
+                  Brand Profile
+                </label>
+                <Link href="/brands" className="text-[10px] font-bold uppercase tracking-widest text-primary hover:underline">
+                  Manage Brands
+                </Link>
+              </div>
+              <select
+                value={selectedBrandId}
+                onChange={(e) => onBrandChange?.(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all appearance-none cursor-pointer"
+              >
+                <option value="">No Brand (Manual Settings)</option>
+                {brands?.map((brand) => (
+                  <option key={brand.id} value={brand.id}>
+                    {brand.brandName} {brand.industry ? `(${brand.industry})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Email Design Settings */}
+            <div className="space-y-4 pt-4 border-t border-border shrink-0">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-2">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Email Design Settings
+              </label>
+              <div className="flex w-full border-b border-border overflow-x-auto scrollbar-hide">
+                {["header", "cta", "signature"].map((sec) => (
+                  <button
+                    key={sec}
+                    onClick={() => setOpenSection(openSection === sec ? null : sec as any)}
+                    className={`flex-none sm:flex-1 flex justify-center px-4 sm:px-0 py-2.5 text-[11px] sm:text-xs font-medium border-b-2 transition-colors ${openSection === sec ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <span className={`inline-block whitespace-nowrap transition-all ${(sec === "header" && includeHeaderImage) ||
+                      (sec === "cta" && includeCta) ||
+                      (sec === "signature" && includeSignature)
+                      ? "px-2 py-0.5 border border-success/50 rounded-full bg-success/10 text-success shadow-sm" : ""
+                      }`}>
+                      {sec === "header" ? "Header Image" : sec === "cta" ? "CTA Button" : "Signature"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <AnimatePresence mode="wait">
+                {openSection && (
+                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="bg-card border border-border rounded-xl overflow-hidden mt-2">
+                    {openSection === "header" && (
+                      <div className="p-4 space-y-4">
+                        <select
+                          value={!includeHeaderImage ? "none" : (customHeaderImage === "manual" ? "manual" : (brands?.find(b => b.id === selectedBrandId)?.headers.find((h: any) => h.imageUrl === customHeaderImage)?.id || "manual"))}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "none") { onIncludeHeaderImageChange?.(false); onCustomHeaderImageChange?.(null); }
+                            else if (val === "manual") { onIncludeHeaderImageChange?.(true); onCustomHeaderImageChange?.("manual"); }
+                            else {
+                              const header = brands?.find(b => b.id === selectedBrandId)?.headers.find((h: any) => h.id === val);
+                              if (header) { onIncludeHeaderImageChange?.(true); onCustomHeaderImageChange?.(header.imageUrl); }
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+                        >
+                          <option value="none">No Header Image</option>
+                          {selectedBrandId && brands?.find(b => b.id === selectedBrandId)?.headers.map((h: any) => (
+                            <option key={h.id} value={h.id}>{h.name}</option>
+                          ))}
+                          <option value="manual">Add Manually</option>
+                        </select>
+                        {includeHeaderImage && (
+                          <div className="mt-2">
+                            {customHeaderImage === "manual" && (
+                              <label className="flex flex-col items-center justify-center w-full min-h-[100px] border-2 border-dashed border-border rounded-xl bg-secondary/5 hover:bg-secondary/10 transition-colors cursor-pointer">
+                                <span className="text-xs font-medium text-muted-foreground">Click to upload header image</span>
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, (b64) => onCustomHeaderImageChange?.(b64))} />
+                              </label>
+                            )}
+                            {customHeaderImage && customHeaderImage !== "manual" && (
+                              <div className="rounded-xl border border-border bg-secondary/5 p-4 flex flex-col items-center justify-center gap-3">
+                                <img
+                                  src={customHeaderImage}
+                                  alt="Header Preview"
+                                  className="max-w-full max-h-[120px] object-contain rounded-lg shadow-sm bg-white border border-border/50"
+                                />
+                                {!brands?.find(b => b.id === selectedBrandId)?.headers.find((h: any) => h.imageUrl === customHeaderImage) && (
+                                  <label className="text-[10px] uppercase tracking-widest font-bold text-primary cursor-pointer hover:text-primary/80 transition-colors">
+                                    Change Image
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, (b64) => onCustomHeaderImageChange?.(b64))} />
+                                  </label>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {openSection === "cta" && (
+                      <div className="p-4 space-y-4">
+                        <select
+                          value={!includeCta ? "none" : (brands?.find(b => b.id === selectedBrandId)?.ctas.find((c: any) => c.text === ctaText && c.link === ctaLink)?.id || "manual")}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "none") onIncludeCtaChange?.(false);
+                            else if (val === "manual") onIncludeCtaChange?.(true);
+                            else {
+                              const cta = brands?.find(b => b.id === selectedBrandId)?.ctas.find((c: any) => c.id === val);
+                              if (cta) { onIncludeCtaChange?.(true); onCtaTextChange?.(cta.text); onCtaLinkChange?.(cta.link); }
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+                        >
+                          <option value="none">No CTA Button</option>
+                          {selectedBrandId && brands?.find(b => b.id === selectedBrandId)?.ctas.map((cta: any) => (
+                            <option key={cta.id} value={cta.id}>{cta.name}</option>
+                          ))}
+                          <option value="manual">Add Manually</option>
+                        </select>
+                        {includeCta && (
+                          <>
+                            <div className="grid grid-cols-2 gap-4 mt-2">
+                              <input type="text" value={ctaLink} onChange={(e) => onCtaLinkChange?.(e.target.value)} placeholder="Link URL" className="px-3 py-2 bg-input border border-border text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                              <input type="text" value={ctaText} onChange={(e) => onCtaTextChange?.(e.target.value)} placeholder="Button Text" className="px-3 py-2 bg-input border border-border text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                            </div>
+                            {ctaText && (
+                              <div className="mt-2 rounded-xl border border-border bg-secondary/5 p-3 flex flex-col items-center justify-center gap-1.5">
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Button Preview</span>
+                                <a
+                                  href={ctaLink || "#"}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-5 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-xs shadow-md shadow-primary/20 hover:opacity-90 transition-opacity mt-1"
+                                >
+                                  {ctaText}
+                                </a>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {openSection === "signature" && (
+                      <div className="p-4 space-y-4">
+                        <select
+                          value={!includeSignature ? "none" : (customSignatureHtml === "manual" ? "manual" : (brands?.find(b => b.id === selectedBrandId)?.signatures.find((s: any) => s.content === customSignatureHtml)?.id || "manual"))}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "none") { onIncludeSignatureChange?.(false); onCustomSignatureHtmlChange?.(null); }
+                            else if (val === "manual") { onIncludeSignatureChange?.(true); onCustomSignatureHtmlChange?.("manual"); }
+                            else {
+                              const sig = brands?.find(b => b.id === selectedBrandId)?.signatures.find((s: any) => s.id === val);
+                              if (sig) { onIncludeSignatureChange?.(true); onCustomSignatureHtmlChange?.(sig.content); }
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+                        >
+                          <option value="none">No Signature</option>
+                          {selectedBrandId && brands?.find(b => b.id === selectedBrandId)?.signatures.map((sig: any) => (
+                            <option key={sig.id} value={sig.id}>{sig.name}</option>
+                          ))}
+                          <option value="manual">Add Manually</option>
+                        </select>
+                        {includeSignature && (
+                          <div
+                            ref={signatureRef}
+                            contentEditable={customSignatureHtml === "manual"}
+                            dangerouslySetInnerHTML={{ __html: customSignatureHtml === "manual" ? (signature?.replace(/\n/g, '<br/>') || "") : (customSignatureHtml || "") }}
+                            onBlur={(e) => { if (customSignatureHtml === "manual") onSignatureChange?.(e.currentTarget.innerHTML); }}
+                            onPaste={handleSignaturePaste}
+                            className="w-full min-h-[6rem] p-3 rounded-lg border border-border text-sm bg-input"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Attachments Section */}
+          <div className="lg:border-l lg:border-border lg:pl-8 flex flex-col min-w-0">
+            <div className="mb-4">
+              <label className="text-sm font-medium text-foreground">Attachments</label>
+            </div>
+
+            {/* Dashed Add Attachment Button */}
+            <label className="cursor-pointer group flex flex-col items-center justify-center bg-secondary/5 rounded-2xl border border-dashed border-border py-8 px-6 mb-6 hover:border-primary/50 hover:bg-primary/5 transition-all">
+              <input type="file" multiple className="hidden" onChange={handleAttachmentUpload} />
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-secondary flex items-center justify-center mb-4 group-hover:bg-primary/10 group-hover:text-primary transition-all shadow-inner">
+                <Upload className="w-7 h-7 text-muted-foreground group-hover:text-primary" />
+              </div>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground group-hover:text-primary transition-colors text-center">
+                Add Attachments
+              </span>
+            </label>
+
+            {/* Uploaded Files List */}
+            {attachments && attachments.length > 0 && (
+              <div className="flex-1 flex flex-col min-w-0">
+                <p className="text-[10px] text-muted-foreground mb-3 uppercase tracking-wider font-bold">Files for Email</p>
+                <div className="flex flex-col gap-1.5 w-full overflow-y-auto max-h-[300px] hide-scrollbar">
+                  {attachments.map((att, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-card border border-border text-foreground text-xs shadow-sm hover:border-primary/50 transition-all">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
+                        <span className="truncate flex-1" title={att.name}>{att.name}</span>
+                      </div>
+                      <button onClick={() => removeAttachment(idx)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0 px-1 text-base leading-none">&times;</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+export function ConfigPanel({
+  prompt,
+  onPromptChange,
+  model,
+  onModelChange,
+  isProcessing,
+  onGenerate,
+  hasData,
+  ccEmail,
+  onCcEmailChange,
+}: Partial<ConfigPanelProps>) {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function fetchModels() {
+      try {
+        const res = await fetch("/api/models");
+        const data = await res.json();
+        if (data.models) {
+          setAvailableModels(data.models.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            description: m.description || "Gemini generative model",
+            icon: m.id.includes("pro") ? Brain : (m.id.includes("flash") ? Zap : Sparkles),
+            badge: m.id.includes("preview") ? "Preview" : (m.id.includes("3") ? "New" : null),
+            color: m.id.includes("pro") ? "from-violet-500 to-purple-500" : (m.id.includes("flash") ? "from-amber-500 to-orange-500" : "from-blue-500 to-cyan-500")
+          })));
+        }
+      } catch (e) { console.error(e); }
+    }
+    fetchModels();
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) setIsDropdownOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const selectedModel = availableModels.find((m) => m.id === model) || availableModels[0] || { id: "", name: "Select Model", icon: Brain, color: "from-gray-500 to-gray-600", description: "Loading...", badge: null };
 
   const variables = [
     { label: "{{name}}", color: "from-blue-500 to-cyan-500" },
@@ -178,435 +404,86 @@ export function ConfigPanel({
   ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.2 }}
-      className="rounded-2xl border border-border bg-card overflow-hidden shadow-xl shadow-accent/5 dark:shadow-none"
-    >
-      {/* Section Header */}
-      <div className="px-4 sm:px-6 py-4 border-b border-border bg-gradient-to-r from-accent/5 via-primary/5 to-transparent dark:from-accent/10 dark:via-primary/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-accent to-primary shadow-lg shadow-accent/20">
-            <Settings2 className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Configuration</h2>
-            <p className="text-xs text-muted-foreground">Customize your AI generation</p>
-          </div>
-        </div>
-
-        {session && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20 w-fit">
-            <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-            <span className="text-[10px] font-bold text-success uppercase tracking-wider">
-              Sender: {session.user?.email}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="p-4 sm:p-6 space-y-6">
-        {/* Brand Selection */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-foreground flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-primary" />
-              Brand Profile
-            </label>
-            <Link
-              href="/brands"
-              className="text-[10px] font-bold uppercase tracking-widest text-primary hover:underline"
-            >
-              Manage Brands
-            </Link>
-          </div>
-          <select
-            value={selectedBrandId}
-            onChange={(e) => onBrandChange(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all shadow-sm appearance-none cursor-pointer"
-          >
-            <option value="">No Brand (Manual Settings)</option>
-            {brands.map((brand) => (
-              <option key={brand.id} value={brand.id}>
-                {brand.brandName} {brand.industry ? `(${brand.industry})` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-
-
-        {/* Design & Signature Accordion */}
-        <div className="space-y-4 pt-4 border-t border-border mt-4">
-          <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-2">
-            <Sparkles className="w-4 h-4 text-primary" />
-            Email Design Settings
-          </label>
-
-          {/* Tabs Header */}
-          <div className="flex border-b border-border overflow-x-auto hide-scrollbar gap-2">
-            <button
-              onClick={() => setOpenSection(openSection === "header" ? null : "header")}
-              className={`whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center justify-center ${openSection === "header" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-            >
-              <span className={`transition-all ${includeHeaderImage ? "px-3 py-1 border border-success/50 rounded-full bg-success/10 text-success shadow-sm" : ""}`}>
-                Header Image
-              </span>
-            </button>
-            <button
-              onClick={() => setOpenSection(openSection === "cta" ? null : "cta")}
-              className={`whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center justify-center ${openSection === "cta" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-            >
-              <span className={`transition-all ${includeCta ? "px-3 py-1 border border-success/50 rounded-full bg-success/10 text-success shadow-sm" : ""}`}>
-                CTA Button
-              </span>
-            </button>
-            <button
-              onClick={() => setOpenSection(openSection === "signature" ? null : "signature")}
-              className={`whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center justify-center ${openSection === "signature" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-            >
-              <span className={`transition-all ${includeSignature ? "px-3 py-1 border border-success/50 rounded-full bg-success/10 text-success shadow-sm" : ""}`}>
-                Signature
-              </span>
-            </button>
-          </div>
-
-          {/* Tab Content */}
-          <AnimatePresence mode="wait">
-            {openSection && (
-              <motion.div
-                key={openSection}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="bg-card border border-border rounded-xl overflow-hidden mt-2"
-              >
-                {openSection === "header" && (
-                  <div className="p-4 space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Select Header Image</label>
-                      <select
-                        value={!includeHeaderImage ? "none" : (customHeaderImage === "manual" ? "manual" : (brands.find(b => b.id === selectedBrandId)?.headers.find((h: any) => h.imageUrl === customHeaderImage)?.id || "manual"))}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "none") {
-                            onIncludeHeaderImageChange(false);
-                            if (onCustomHeaderImageChange) onCustomHeaderImageChange(null);
-                          } else if (val === "manual") {
-                            onIncludeHeaderImageChange(true);
-                            if (onCustomHeaderImageChange) onCustomHeaderImageChange("manual");
-                          } else {
-                            const header = brands.find(b => b.id === selectedBrandId)?.headers.find((h: any) => h.id === val);
-                            if (header) {
-                              onIncludeHeaderImageChange(true);
-                              if (onCustomHeaderImageChange) onCustomHeaderImageChange(header.imageUrl);
-                            }
-                          }
-                        }}
-                        className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
-                      >
-                        <option value="none">No Header Image</option>
-                        {selectedBrandId && brands.find(b => b.id === selectedBrandId)?.headers.map((h: any) => (
-                          <option key={h.id} value={h.id}>{h.name}</option>
-                        ))}
-                        <option value="manual">Add Manually</option>
-                      </select>
-                    </div>
-
-                    {includeHeaderImage && (
-                      <div className="space-y-2 p-3 bg-secondary/20 rounded-xl border border-border">
-                        <span className="text-xs text-muted-foreground font-medium">
-                          {customHeaderImage === "manual" ? "Custom Header Image" : "Header Preview"}
-                        </span>
-                        <div className="flex items-center gap-4">
-                          {customHeaderImage && customHeaderImage !== "manual" && (
-                            <img src={customHeaderImage} alt="Header Preview" className="h-10 w-20 object-cover rounded shadow" />
-                          )}
-                          {customHeaderImage === "manual" && (
-                            <div className="flex items-center gap-4 w-full">
-                              <input type="file" accept="image/*" className="text-xs text-muted-foreground file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" onChange={(e) => handleImageUpload(e, (base64) => onCustomHeaderImageChange?.(base64))} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {openSection === "cta" && (
-                  <div className="p-4 space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Select CTA Button</label>
-                      <select
-                        value={!includeCta ? "none" : (brands.find(b => b.id === selectedBrandId)?.ctas.find((c: any) => c.text === ctaText && c.link === ctaLink)?.id || "manual")}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "none") {
-                            onIncludeCtaChange(false);
-                          } else if (val === "manual") {
-                            onIncludeCtaChange(true);
-                          } else {
-                            const cta = brands.find(b => b.id === selectedBrandId)?.ctas.find((c: any) => c.id === val);
-                            if (cta) {
-                              onIncludeCtaChange(true);
-                              onCtaTextChange(cta.text);
-                              onCtaLinkChange(cta.link);
-                            }
-                          }
-                        }}
-                        className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
-                      >
-                        <option value="none">No CTA Button</option>
-                        {selectedBrandId && brands.find(b => b.id === selectedBrandId)?.ctas.map((cta: any) => (
-                          <option key={cta.id} value={cta.id}>{cta.name}</option>
-                        ))}
-                        <option value="manual">Add Manually</option>
-                      </select>
-                    </div>
-
-                    {includeCta && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 bg-secondary/20 rounded-xl border border-border">
-                        <div className="space-y-2">
-                          <span className="text-xs text-muted-foreground font-medium">Button Link (URL)</span>
-                          <input
-                            type="text"
-                            value={ctaLink}
-                            onChange={(e) => onCtaLinkChange(e.target.value)}
-                            placeholder="https://your-website.com"
-                            className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <span className="text-xs text-muted-foreground font-medium">Button Text</span>
-                          <input
-                            type="text"
-                            value={ctaText}
-                            onChange={(e) => onCtaTextChange(e.target.value)}
-                            placeholder="Book a Demo"
-                            className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {openSection === "signature" && (
-                  <div className="p-4 space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Select Signature</label>
-                      <select
-                        value={!includeSignature ? "none" : (customSignatureHtml === "manual" ? "manual" : (brands.find(b => b.id === selectedBrandId)?.signatures.find((s: any) => s.content === customSignatureHtml)?.id || "manual"))}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === "none") {
-                            onIncludeSignatureChange(false);
-                            onCustomSignatureHtmlChange(null);
-                          } else if (val === "manual") {
-                            onIncludeSignatureChange(true);
-                            onCustomSignatureHtmlChange("manual"); // special state
-                          } else {
-                            const sig = brands.find(b => b.id === selectedBrandId)?.signatures.find((s: any) => s.id === val);
-                            if (sig) {
-                              onIncludeSignatureChange(true);
-                              onCustomSignatureHtmlChange(sig.content);
-                            }
-                          }
-                        }}
-                        className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
-                      >
-                        <option value="none">No Signature</option>
-                        {selectedBrandId && brands.find(b => b.id === selectedBrandId)?.signatures.map((sig: any) => (
-                          <option key={sig.id} value={sig.id}>{sig.name}</option>
-                        ))}
-                        <option value="manual">Add Manually</option>
-                      </select>
-                    </div>
-
-                    {includeSignature && (
-                      <div className="space-y-2">
-                        <span className="text-xs text-muted-foreground font-medium">
-                          {customSignatureHtml === "manual" ? "Manual Signature (Rich Text)" : "Signature Preview"}
-                        </span>
-                        <div
-                          ref={signatureRef}
-                          contentEditable={customSignatureHtml === "manual"}
-                          suppressContentEditableWarning={true}
-                          dangerouslySetInnerHTML={{ __html: customSignatureHtml === "manual" ? (signature.replace(/\n/g, '<br/>')) : (customSignatureHtml || "") }}
-                          onBlur={(e) => {
-                            if (customSignatureHtml === "manual") {
-                              onSignatureChange(e.currentTarget.innerHTML);
-                            }
-                          }}
-                          onPaste={handleSignaturePaste}
-                          className={`w-full min-h-[6rem] max-h-48 overflow-y-auto px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 ${customSignatureHtml !== "manual" ? 'opacity-80 bg-secondary/20 cursor-default' : 'cursor-text bg-white text-black'}`}
-                          style={{ minHeight: '6rem' }}
-                        />
-                        {customSignatureHtml === "manual" && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">Add Image to Signature:</span>
-                            <input type="file" accept="image/*" className="text-xs text-muted-foreground file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-[10px] file:font-semibold file:bg-accent/10 file:text-accent hover:file:bg-accent/20" onChange={(e) => handleImageUpload(e, (base64) => {
-                              const imgTag = `<br/><img src="${base64}" alt="Signature" style="max-height: 50px; margin-top: 8px;" />`;
-                              onSignatureChange(signature + imgTag);
-                              if (signatureRef.current) {
-                                signatureRef.current.innerHTML = signature + imgTag;
-                              }
-                            })} />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Attachments Section - Always Visible Below */}
-          <div className="pt-4 mt-4 border-t border-border space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-foreground">Attachments</label>
-              <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-secondary text-xs font-semibold text-foreground hover:bg-secondary/80 transition-colors">
-                <input type="file" multiple className="hidden" onChange={handleAttachmentUpload} />
-                Add Attachment
-              </label>
-            </div>
-            {attachments && attachments.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {attachments.map((att, idx) => (
-                  <div key={idx} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/30 text-success text-xs shadow-sm">
-                    <span className="truncate max-w-[150px] font-medium" title={att.name}>{att.name}</span>
-                    <button onClick={() => removeAttachment(idx)} className="text-success hover:text-destructive transition-colors">
-                      &times;
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Master Prompt */}
-        <div className="space-y-3 pt-6 border-t border-border mt-6">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-border bg-card overflow-hidden shadow-xl shadow-accent/5">
+      <div className="p-4 space-y-4">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Sparkles className="w-4 h-4 text-accent" />
               Master Prompt
             </label>
-            <span className="text-xs text-muted-foreground">
-              {prompt.length} / 2000
-            </span>
+            <span className="text-xs text-muted-foreground">{prompt?.length} / 2000</span>
           </div>
           <textarea
             value={prompt}
-            onChange={(e) => onPromptChange(e.target.value)}
-            maxLength={2000}
-            placeholder="Write a friendly, personalized cold email that introduces our SaaS product. Keep it concise and professional with a clear call-to-action..."
-            className="w-full h-36 px-4 py-4 rounded-xl bg-input border border-border text-foreground placeholder-muted-foreground text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50 transition-all leading-relaxed"
+            onChange={(e) => onPromptChange?.(e.target.value)}
+            className="w-full h-24 px-3 py-3 rounded-xl bg-input border border-border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent/50"
           />
-          <div className="flex flex-wrap gap-2">
-            {variables.map((variable) => (
-              <motion.button
-                key={variable.label}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => onPromptChange(prompt + " " + variable.label)}
-                className={`px-3 py-1.5 rounded-lg bg-gradient-to-r ${variable.color} text-white text-xs font-mono font-medium shadow-md hover:shadow-lg transition-shadow`}
-              >
-                {variable.label}
-              </motion.button>
-            ))}
-            <span className="text-xs text-muted-foreground self-center ml-1">
-              Click to insert variable
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-4 mt-2">
+            <div className="flex flex-wrap gap-2">
+              {variables.map((v) => (
+                <button key={v.label} onClick={() => onPromptChange?.(prompt + " " + v.label)} className={`px-3 py-1.5 rounded-lg bg-gradient-to-r ${v.color} text-white text-xs font-medium`}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={onGenerate}
+              disabled={!hasData || isProcessing}
+              className="flex items-center justify-center gap-2 px-6 py-2 rounded-xl bg-gradient-to-r from-primary to-accent text-white text-sm font-bold shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {isProcessing ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Generating...</span></> : <><Sparkles className="w-4 h-4" /><span>Generate</span></>}
+            </motion.button>
           </div>
         </div>
-        {/* AI Model Selection */}
-        <div className="space-y-3 pt-6 border-t border-border mt-6">
-          <label className="text-sm font-medium text-foreground">
-            AI Model
-          </label>
+
+        <div className="space-y-2 pt-4 border-t border-border">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">AI Model</label>
           <div ref={dropdownRef} className="relative">
-            <motion.button
-              whileHover={{ scale: 1.005 }}
-              whileTap={{ scale: 0.995 }}
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="w-full flex items-center justify-between px-4 py-4 rounded-xl bg-input border border-border text-foreground hover:border-primary/50 transition-all"
-            >
-              <div className="flex items-center gap-4">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br ${selectedModel.color} shadow-lg`}>
-                  <selectedModel.icon className="w-5 h-5 text-white" />
+            <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-input border border-border hover:border-primary/50 transition-all">
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${selectedModel.color} flex items-center justify-center shadow-md`}>
+                  <selectedModel.icon className="w-4 h-4 text-white" />
                 </div>
                 <div className="text-left">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">{selectedModel.name}</p>
-                    {selectedModel.badge && (
-                      <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-primary/10 to-accent/10 text-primary dark:text-accent text-[10px] font-semibold uppercase tracking-wide">
-                        {selectedModel.badge}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {selectedModel.description}
-                  </p>
+                  <p className="text-sm font-medium">{selectedModel.name}</p>
                 </div>
               </div>
-              <motion.div
-                animate={{ rotate: isDropdownOpen ? 180 : 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ChevronDown className="w-5 h-5 text-muted-foreground" />
-              </motion.div>
-            </motion.button>
-
-            {/* Dropdown Menu */}
+              <ChevronDown className="w-5 h-5 text-muted-foreground" />
+            </button>
             <AnimatePresence>
               {isDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute z-20 w-full mt-2 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden"
-                >
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="absolute z-20 w-full mt-2 rounded-xl border border-border bg-popover shadow-2xl overflow-hidden">
                   {availableModels.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => {
-                        onModelChange(m.id);
-                        setIsDropdownOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-secondary ${model === m.id ? "bg-secondary/50" : ""
-                        }`}
-                    >
-                      <div className={`flex items-center justify-center w-10 h-10 rounded-xl ${model === m.id
-                        ? `bg-gradient-to-br ${m.color} shadow-lg`
-                        : "bg-secondary"
-                        }`}>
-                        <m.icon className={`w-5 h-5 ${model === m.id ? "text-white" : "text-muted-foreground"}`} />
+                    <button key={m.id} onClick={() => { onModelChange?.(m.id); setIsDropdownOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-secondary transition-colors">
+                      <div className={`w-8 h-8 rounded-lg ${model === m.id ? `bg-gradient-to-br ${m.color}` : "bg-secondary"} flex items-center justify-center`}>
+                        <m.icon className={`w-4 h-4 ${model === m.id ? "text-white" : "text-muted-foreground"}`} />
                       </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-foreground">{m.name}</p>
-                          {m.badge && (
-                            <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-primary/10 to-accent/10 text-primary dark:text-accent text-[10px] font-semibold uppercase tracking-wide">
-                              {m.badge}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[200px]">{m.description}</p>
+                      <div className="text-left flex-1">
+                        <p className="text-sm font-medium">{m.name}</p>
                       </div>
-                      {model === m.id && (
-                        <Check className="w-5 h-5 text-primary" />
-                      )}
                     </button>
                   ))}
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
+        </div>
+
+        <div className="space-y-2 pt-4 border-t border-border">
+          <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <Building2 className="w-3.5 h-3.5 text-primary" />
+            CC Recipients (Optional)
+          </label>
+          <input
+            type="email"
+            value={ccEmail || ""}
+            onChange={(e) => onCcEmailChange?.(e.target.value)}
+            placeholder="colleague@company.com"
+            className="w-full px-3 py-2 rounded-xl bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+          />
         </div>
       </div>
     </motion.div>

@@ -134,7 +134,6 @@ function AddForm({ type, brandId, onAdd }: { type: AssetType; brandId: string; o
                       suppressContentEditableWarning={true}
                       onBlur={(e) => f("content", e.currentTarget.innerHTML)}
                       onPaste={handleSignaturePaste}
-                      placeholder="Best regards, Acme Corp"
                       className="w-full min-h-[6rem] max-h-48 overflow-y-auto px-3 py-2 rounded-lg bg-white text-black border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-text"
                       dangerouslySetInnerHTML={{ __html: form.content }}
                     />

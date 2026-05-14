@@ -6,16 +6,24 @@ import { useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 
 interface InputSectionProps {
-  onDataChange: (data: string[][], hasHeader: boolean) => void;
+  onDataChange: (data: string[][], hasHeader: boolean, fileName: string | null, tab: "csv" | "manual" | "data") => void;
+  activeTab: "csv" | "manual" | "data";
+  fileName: string | null;
+  parsedData: string[][];
+  manualInput: string;
+  onManualInputChange: (val: string) => void;
 }
 
-export function InputSection({ onDataChange }: InputSectionProps) {
-  const [activeTab, setActiveTab] = useState<"csv" | "manual" | "data">("csv");
+export function InputSection({ 
+  onDataChange, 
+  activeTab, 
+  fileName, 
+  parsedData, 
+  manualInput, 
+  onManualInputChange 
+}: InputSectionProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
   const [rowCount, setRowCount] = useState(0);
-  const [manualInput, setManualInput] = useState("");
-  const [parsedData, setParsedData] = useState<string[][]>([]);
   const [hasHeaderRow, setHasHeaderRow] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -25,6 +33,13 @@ export function InputSection({ onDataChange }: InputSectionProps) {
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
+
+  // Sync rowCount locally when global parsedData changes
+  const [localParsedData, setLocalParsedData] = useState<string[][]>([]);
+  
+  const setActiveTab = (tab: "csv" | "manual" | "data") => {
+    onDataChange(parsedData, hasHeaderRow, fileName, tab);
+  };
 
 
 
@@ -103,37 +118,31 @@ export function InputSection({ onDataChange }: InputSectionProps) {
     return { cleaned: processed, hasHeader };
   };
 
-  const applySheetData = useCallback(async (wb: XLSX.WorkBook, sheetName: string) => {
+  const applySheetData = useCallback(async (wb: XLSX.WorkBook, sheetName: string, fName: string | null = fileName) => {
     const sheet = wb.Sheets[sheetName];
     const raw: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
     const { cleaned, hasHeader } = await aiSmartParse(raw);
 
-    const count = hasHeader ? Math.max(0, cleaned.length - 1) : cleaned.length;
     setHasHeaderRow(hasHeader);
-    setRowCount(count);
-    setParsedData(cleaned);
     setCurrentPage(1);
     setActiveSheet(sheetName);
-    onDataChange(cleaned, hasHeader);
-    setActiveTab("data");
-  }, [onDataChange]);
+    onDataChange(cleaned, hasHeader, fName, "data");
+  }, [onDataChange, fileName]);
 
   const processFile = useCallback(async (file: File) => {
-    setFileName(file.name);
     try {
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: "buffer" });
       setWorkbook(wb);
       setSheetNames(wb.SheetNames);
-      await applySheetData(wb, wb.SheetNames[0]);
+      await applySheetData(wb, wb.SheetNames[0], file.name);
     } catch (err) {
       console.error("Failed to parse file:", err);
-      setFileName(null);
-      setParsedData([]);
+      onDataChange([], false, null, "csv");
       setRowCount(0);
       alert("Could not read file. Please ensure it is a valid CSV or Excel file.");
     }
-  }, [applySheetData]);
+  }, [applySheetData, onDataChange]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -154,25 +163,16 @@ export function InputSection({ onDataChange }: InputSectionProps) {
         .split(/[\n,]/)
         .map((email) => email.trim())
         .filter((email) => email && email.includes("@"));
-      setRowCount(emails.length);
       const data = [["Email"], ...emails.map(e => [e])];
-      setParsedData(data);
-      setHasHeaderRow(true);
-      onDataChange(data, true);
-      setActiveTab("data");
+      onDataChange(data, true, "Manual Entry", "data");
     }
   };
 
   const clearFile = () => {
-    setFileName(null);
-    setRowCount(0);
-    setParsedData([]);
-    setCurrentPage(1);
     setWorkbook(null);
     setSheetNames([]);
     setActiveSheet(null);
-    onDataChange([], false);
-    setActiveTab("csv");
+    onDataChange([], false, null, "csv");
   };
 
   const tabs = [
@@ -186,17 +186,30 @@ export function InputSection({ onDataChange }: InputSectionProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.1 }}
-      className="rounded-2xl border border-border bg-card overflow-hidden shadow-xl shadow-primary/5 dark:shadow-none"
+      className="rounded-2xl border border-border bg-card overflow-hidden shadow-xl shadow-primary/5 dark:shadow-none flex flex-col h-full"
     >
       <div className="px-4 sm:px-6 py-4 border-b border-border bg-gradient-to-r from-primary/5 via-accent/5 to-transparent dark:from-primary/10 dark:via-accent/10">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent shadow-lg shadow-primary/20">
-            <Users className="w-4 h-4 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent shadow-lg shadow-primary/20">
+              <Users className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Recipients</h2>
+              <p className="text-xs text-muted-foreground">Import your contact list</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Recipients</h2>
-            <p className="text-xs text-muted-foreground">Import your contact list</p>
-          </div>
+          {rowCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="px-3 py-1 rounded-full bg-primary/10 border border-primary/20"
+            >
+              <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                {rowCount} {rowCount === 1 ? 'Recipient' : 'Recipients'} Found
+              </span>
+            </motion.div>
+          )}
         </div>
       </div>
 
@@ -452,7 +465,7 @@ export function InputSection({ onDataChange }: InputSectionProps) {
             >
               <textarea
                 value={manualInput}
-                onChange={(e) => setManualInput(e.target.value)}
+                onChange={(e) => onManualInputChange(e.target.value)}
                 placeholder={"Enter email addresses, one per line:\n\njohn@company.com\njane@startup.io\ncontact@business.com"}
                 className="w-full h-44 px-4 py-4 rounded-xl bg-input border border-border text-foreground placeholder-muted-foreground text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all font-mono"
               />

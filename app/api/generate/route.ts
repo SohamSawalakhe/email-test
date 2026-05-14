@@ -18,11 +18,11 @@ export async function POST(request: Request) {
 
     const userAccessToken = await getFreshAccessToken((session!.user as any).id);
 
-    // ── Fetch Brand Context ────────────────────────────────────────
+    // ── Fetch Brand Context ──────────────────────────────────────
     let brandContext: any = null;
     if (brandProfileId) {
       brandContext = await prisma.brandProfile.findUnique({
-        where: { id: brandProfileId, userId: (session.user as any).id }
+        where: { id: brandProfileId, userId: (session?.user as any).id }
       });
     }
 
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       const firstRow = cleanCsvData[0];
 
       if (hasHeader) {
-        headers = firstRow.map(h => String(h).trim());
+        headers = firstRow.map((h: any) => String(h).trim());
         dataToProcess = cleanCsvData.slice(1);
       } else {
         dataToProcess = cleanCsvData;

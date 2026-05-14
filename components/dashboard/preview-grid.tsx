@@ -13,8 +13,8 @@ interface EmailPreview {
 
 interface PreviewGridProps {
   previews: EmailPreview[];
-  isProcessing: boolean;
-  onGenerate: () => void;
+  isProcessing?: boolean;
+  totalRecipients?: number;
   onPreviewEdit?: (index: number, newGenerated: string) => void;
   hasData: boolean;
   signature?: string;
@@ -26,12 +26,13 @@ interface PreviewGridProps {
   includeCta?: boolean;
   includeSignature?: boolean;
   failedIndices?: Set<number>;
+  ccEmail?: string;
 }
 
 export function PreviewGrid({
   previews,
-  isProcessing,
-  onGenerate,
+  isProcessing = false,
+  totalRecipients = 0,
   onPreviewEdit,
   hasData,
   signature = "",
@@ -43,6 +44,7 @@ export function PreviewGrid({
   includeCta,
   includeSignature,
   failedIndices = new Set(),
+  ccEmail,
 }: PreviewGridProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editState, setEditState] = useState<any>(null);
@@ -65,11 +67,10 @@ export function PreviewGrid({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
-      className="rounded-2xl border border-border bg-card overflow-hidden h-full shadow-xl shadow-primary/5 dark:shadow-none"
+      className="rounded-2xl border border-border bg-card overflow-hidden shadow-xl shadow-primary/5 dark:shadow-none h-full flex flex-col"
     >
       {/* Section Header */}
-      {/* Section Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-border bg-gradient-to-r from-primary/5 via-accent/5 to-transparent dark:from-primary/10 dark:via-accent/10 gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-border bg-gradient-to-r from-primary/5 via-accent/5 to-transparent dark:from-primary/10 dark:via-accent/10 gap-4 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent shadow-lg shadow-primary/20">
             <Eye className="w-4 h-4 text-white" />
@@ -79,28 +80,35 @@ export function PreviewGrid({
             <p className="text-xs text-muted-foreground">AI-generated emails</p>
           </div>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={onGenerate}
-          disabled={!hasData || isProcessing}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-accent text-white text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none transition-all"
-        >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Generating...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              <span>Generate</span>
-            </>
-          )}
-        </motion.button>
       </div>
 
-      <div className="p-4 sm:p-6 sm:max-h-[600px] sm:overflow-y-auto">
+      {/* Generation Progress Bar */}
+      {(isProcessing || (previews.length > 0 && totalRecipients > 0 && previews.length < totalRecipients)) && (
+        <div className="px-4 sm:px-6 py-3 border-b border-border bg-secondary/20 shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
+              </span>
+              <span className="text-[11px] font-semibold text-accent uppercase tracking-wider">Generating...</span>
+            </div>
+            <span className="text-[11px] font-semibold text-foreground tabular-nums">
+              {previews.length} <span className="text-muted-foreground font-normal">/ {totalRecipients} emails</span>
+            </span>
+          </div>
+          <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: totalRecipients > 0 ? `${(previews.length / totalRecipients) * 100}%` : '0%' }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="p-4 sm:p-6 flex-1 overflow-y-auto min-h-0">
         {previews.length === 0 ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -186,14 +194,14 @@ export function PreviewGrid({
                             </div>
                           )}
                           <code className="text-[10px] text-muted-foreground font-mono break-all whitespace-pre-wrap flex flex-col gap-1">
-                            {Array.isArray(preview.original) 
-                              ? preview.original.join(", ") 
+                            {Array.isArray(preview.original)
+                              ? preview.original.join(", ")
                               : typeof preview.original === 'object'
                                 ? Object.entries(preview.original).map(([k, v]) => (
-                                    <span key={k}>
-                                      <span className="font-semibold text-foreground/70">{k}:</span> {String(v)}
-                                    </span>
-                                  ))
+                                  <span key={k}>
+                                    <span className="font-semibold text-foreground/70">{k}:</span> {String(v)}
+                                  </span>
+                                ))
                                 : String(preview.original)}
                           </code>
                         </div>
@@ -217,10 +225,18 @@ export function PreviewGrid({
                             {preview.recipientEmail && preview.recipientEmail !== "INVALID_EMAIL" && (
                               <>
                                 <span className="text-muted-foreground/30">•</span>
-                                <span className="text-[11px] font-medium text-foreground px-2 py-0.5 rounded bg-secondary/50 border border-border/50 flex items-center gap-1.5">
-                                  <Mail className="w-3 h-3 text-muted-foreground" />
-                                  {preview.recipientEmail}
-                                </span>
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-[11px] font-medium text-foreground px-2 py-0.5 rounded bg-secondary/50 border border-border/50 flex items-center gap-1.5">
+                                    <span className="text-[9px] font-bold text-muted-foreground uppercase">To:</span>
+                                    {preview.recipientEmail}
+                                  </span>
+                                  {ccEmail && (
+                                    <span className="text-[11px] font-medium text-foreground px-2 py-0.5 rounded bg-secondary/30 border border-border/30 flex items-center gap-1.5">
+                                      <span className="text-[9px] font-bold text-muted-foreground uppercase">Cc:</span>
+                                      {ccEmail}
+                                    </span>
+                                  )}
+                                </div>
                               </>
                             )}
                           </div>
@@ -301,11 +317,11 @@ export function PreviewGrid({
                                     {/* Persistent Header — always at the top */}
                                     {includeHeaderImage !== false && (customHeaderImage || (parsed.blocks?.find((b: any) => b.type === 'image')?.content?.url)) && (
                                       <div className="mb-2 text-center">
-                                        <img 
-                                          src={customHeaderImage || parsed.blocks?.find((b: any) => b.type === 'image')?.content?.url} 
-                                          alt="Header" 
-                                          className="max-w-full h-auto rounded-lg" 
-                                          style={{ maxHeight: '200px', objectFit: 'cover', display: 'inline-block' }} 
+                                        <img
+                                          src={customHeaderImage || parsed.blocks?.find((b: any) => b.type === 'image')?.content?.url}
+                                          alt="Header"
+                                          className="max-w-full h-auto rounded-lg"
+                                          style={{ maxHeight: '200px', objectFit: 'cover', display: 'inline-block' }}
                                         />
                                       </div>
                                     )}
@@ -329,11 +345,11 @@ export function PreviewGrid({
                                     {/* Persistent CTA — always after the body */}
                                     {includeCta !== false && (ctaText || ctaLink) && (
                                       <div className="mt-6 mb-4 text-center">
-                                        <a 
-                                          href={ctaLink || "#"} 
-                                          style={{ 
-                                            backgroundColor: '#2563eb', 
-                                            color: '#ffffff', 
+                                        <a
+                                          href={ctaLink || "#"}
+                                          style={{
+                                            backgroundColor: '#2563eb',
+                                            color: '#ffffff',
                                             fontSize: '14px',
                                             padding: '12px 32px',
                                             fontWeight: '600',
@@ -342,7 +358,7 @@ export function PreviewGrid({
                                             display: 'inline-block',
                                             boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2), 0 2px 4px -1px rgba(37, 99, 235, 0.1)',
                                             transition: 'all 0.2s ease'
-                                          }} 
+                                          }}
                                           className="hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]"
                                         >
                                           {ctaText || 'Click Here'}
@@ -368,16 +384,7 @@ export function PreviewGrid({
                                     </div>
                                   )}
 
-                                  {/* Email Footer */}
-                                  <div className="mt-6 pt-4 border-t border-border/50">
-                                    <p className="text-[11px] text-muted-foreground/60 text-center leading-relaxed">
-                                      You are receiving this email because you opted in or have an existing relationship with us.
-                                      <br />
-                                      <span className="hover:text-muted-foreground cursor-pointer underline underline-offset-2">Unsubscribe</span>
-                                      {" · "}
-                                      <span className="hover:text-muted-foreground cursor-pointer underline underline-offset-2">Privacy Policy</span>
-                                    </p>
-                                  </div>
+
                                 </div>
                               );
                             })()
