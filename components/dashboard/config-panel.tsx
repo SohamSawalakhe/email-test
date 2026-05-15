@@ -41,7 +41,7 @@ interface ConfigPanelProps {
 
 // Helper to handle image uploads to S3
 const handleImageUploadToS3 = async (
-  e: React.ChangeEvent<HTMLInputElement>, 
+  e: React.ChangeEvent<HTMLInputElement>,
   callback: (url: string) => void,
   setLoading?: (loading: boolean) => void
 ) => {
@@ -51,12 +51,12 @@ const handleImageUploadToS3 = async (
     try {
       const formData = new FormData();
       formData.append("file", file);
-      
+
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
-      
+
       const data = await res.json();
       if (data.url) {
         callback(data.url);
@@ -236,11 +236,11 @@ export function BrandDesignPanel({
                                 ) : (
                                   <>
                                     <span className="text-xs font-medium text-muted-foreground">Click to upload header image</span>
-                                    <input 
-                                      type="file" 
-                                      accept="image/*" 
-                                      className="hidden" 
-                                      onChange={(e) => handleImageUploadToS3(e, (url) => onCustomHeaderImageChange?.(url), setIsUploadingImage)} 
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => handleImageUploadToS3(e, (url) => onCustomHeaderImageChange?.(url), setIsUploadingImage)}
                                     />
                                   </>
                                 )}
@@ -256,11 +256,11 @@ export function BrandDesignPanel({
                                 {!brands?.find(b => b.id === selectedBrandId)?.headers.find((h: any) => h.imageUrl === customHeaderImage) && (
                                   <label className="text-[10px] uppercase tracking-widest font-bold text-primary cursor-pointer hover:text-primary/80 transition-colors">
                                     Change Image
-                                    <input 
-                                      type="file" 
-                                      accept="image/*" 
-                                      className="hidden" 
-                                      onChange={(e) => handleImageUploadToS3(e, (url) => onCustomHeaderImageChange?.(url), setIsUploadingImage)} 
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => handleImageUploadToS3(e, (url) => onCustomHeaderImageChange?.(url), setIsUploadingImage)}
                                     />
                                   </label>
                                 )}
@@ -440,9 +440,9 @@ export function ConfigPanel({
   const selectedModel = availableModels.find((m) => m.id === model) || availableModels[0] || { id: "", name: "Select Model", icon: Brain, color: "from-gray-500 to-gray-600", description: "Loading...", badge: null };
 
   const variables = [
-    { label: "{{name}}", color: "from-blue-500 to-cyan-500" },
-    { label: "{{email}}", color: "from-emerald-500 to-teal-500" },
-    { label: "{{company}}", color: "from-orange-500 to-amber-500" },
+    { label: "{{name}}", color: "from-blue-500 to-cyan-500", description: "Recipient's Name" },
+    { label: "{{email}}", color: "from-emerald-500 to-teal-500", description: "Recipient's Email" },
+    { label: "{{company}}", color: "from-orange-500 to-amber-500", description: "Company Name" },
   ];
 
   return (
@@ -450,21 +450,28 @@ export function ConfigPanel({
       <div className="p-4 space-y-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <label className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Sparkles className="w-4 h-4 text-accent" />
               Master Prompt
             </label>
-            <span className="text-xs text-muted-foreground">{prompt?.length} / 2000</span>
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+              {prompt?.length || 0} / 2000
+            </span>
           </div>
           <textarea
             value={prompt}
             onChange={(e) => onPromptChange?.(e.target.value)}
-            className="w-full h-24 px-3 py-3 rounded-xl bg-input border border-border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent/50"
+            placeholder={`Tell the AI what to write.\n\nExample: "Write a professional outreach to {{name}} at {{company}}. Focus on our new services and keep the tone helpful but direct. Maintain a limit of 150 words."`}
+            className="w-full h-32 px-4 py-4 rounded-2xl bg-input border border-border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all placeholder:text-muted-foreground/50 custom-scrollbar"
           />
           <div className="flex flex-wrap items-center justify-between gap-4 mt-2">
             <div className="flex flex-wrap gap-2">
               {variables.map((v) => (
-                <button key={v.label} onClick={() => onPromptChange?.(prompt + " " + v.label)} className={`px-3 py-1.5 rounded-lg bg-gradient-to-r ${v.color} text-white text-xs font-medium`}>
+                <button
+                  key={v.label}
+                  onClick={() => onPromptChange?.(prompt + (prompt ? " " : "") + v.label)}
+                  className={`px-3 py-1.5 rounded-lg bg-gradient-to-r ${v.color} text-white text-[11px] font-semibold shadow-sm hover:shadow-md transition-all`}
+                >
                   {v.label}
                 </button>
               ))}
