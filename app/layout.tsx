@@ -6,6 +6,7 @@ import { NextAuthProvider } from '@/app/NextAuthProvider'
 import { DashboardProvider } from '../context/dashboard-context'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Toaster } from 'sonner'
+import Script from 'next/script'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -91,6 +92,20 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased min-h-screen bg-background text-foreground">
+        {/* Google Analytics (gtag.js) */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-M5G4S0CYQ3"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+
+            gtag('config', 'G-M5G4S0CYQ3');
+          `}
+        </Script>
         <NextAuthProvider>
           <ThemeProvider
             attribute="class"
