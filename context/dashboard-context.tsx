@@ -1,8 +1,10 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback } from "react";
+import { DEFAULT_MODEL } from "@/lib/gemini-models";
 
 export interface EmailPreview {
+  id?: string;
   recipientEmail?: string;
   generated: any;
   original: any;
@@ -62,7 +64,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [ccEmail, setCcEmail] = useState("");
 
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState("models/gemini-2.0-flash-lite-preview-02-05");
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [previews, setPreviews] = useState<EmailPreview[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);

@@ -302,6 +302,7 @@ export default function Dashboard() {
           to: recipientEmail,
           cc: ccEmail,
           emailData: parsedPayload,
+          draftId: preview.id,
           attachments: attachments
         });
         setSentEmails((prev) => prev + 1);

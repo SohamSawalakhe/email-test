@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import { getFreshAccessToken } from "@/lib/google-auth";
+import { getModelFallbackChain, DEFAULT_MODEL, markModelDeprecated } from "@/lib/gemini-models";
 
 export async function POST(request: Request) {
   try {
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
           userId: (session!.user as any).id,
           name: campaignName || `Campaign ${new Date().toLocaleDateString()}`,
           prompt,
-          model: model || "models/gemini-3-flash-preview",
+          model: model || DEFAULT_MODEL,
           status: "generating",
         },
       });
@@ -110,6 +111,7 @@ export async function POST(request: Request) {
     const BATCH_SIZE = 8; // Slightly smaller batches for higher quality
     const totalRecipients = dataToProcess.length;
     let allGeneratedEmails: any[] = [];
+    let actualModelUsed = model || DEFAULT_MODEL;
     let totalTokensEstimate = 0;
 
     for (let i = 0; i < totalRecipients; i += BATCH_SIZE) {
@@ -177,14 +179,8 @@ Example Default Structure:
 }
 IMPORTANT: Never merge the entire email body into one block.`;
 
-      // ── Updated Model List (NO 1.5) ─────────────────────────────
-      const selectedModel = model?.startsWith("models/") ? model : `models/${model || "gemini-3-flash-preview"}`;
-      const modelsToTry = [
-        selectedModel,
-        "models/gemini-3.1-flash-lite-preview",
-        "models/gemini-2.0-flash",
-        "models/gemini-flash-latest"
-      ].filter(m => !m.includes("1.5")); // Hard restriction on 1.5
+      // ── Smart Model Fallback (auto-fetch newest → oldest) ─────
+      const modelsToTry = await getModelFallbackChain(model, `Bearer ${userAccessToken}`);
 
       let batchResult: any[] = [];
 
@@ -205,7 +201,14 @@ IMPORTANT: Never merge the entire email body into one block.`;
 
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            console.warn(`Model ${mId} failed: ${res.status}`, err);
+            const errMsg = err?.error?.message || "";
+            const isDeprecatedError = res.status === 404 || errMsg.toLowerCase().includes("deprecated") || errMsg.toLowerCase().includes("not found");
+            if (isDeprecatedError) {
+              markModelDeprecated(mId);
+              console.warn(`⚠️ Model ${mId} deprecated/removed (${res.status}): ${errMsg}. Falling back...`);
+            } else {
+              console.warn(`Model ${mId} failed: ${res.status}`, err);
+            }
             continue;
           }
 
@@ -217,6 +220,7 @@ IMPORTANT: Never merge the entire email body into one block.`;
 
           if (Array.isArray(batchResult)) {
             totalTokensEstimate += Math.round((batchPrompt.length + text.length) / 4);
+            actualModelUsed = mId;
             break;
           }
         } catch (e) {
@@ -261,7 +265,9 @@ IMPORTANT: Never merge the entire email body into one block.`;
       });
     });
 
-    await prisma.emailDraft.createMany({ data: draftData });
+    const savedDrafts = await prisma.$transaction(
+      draftData.map(d => prisma.emailDraft.create({ data: d }))
+    );
     await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "completed" } });
 
     await prisma.geminiUsage.create({
@@ -269,12 +275,13 @@ IMPORTANT: Never merge the entire email body into one block.`;
         userId: (session!.user as any).id,
         campaignId: campaign.id,
         tokensUsed: totalTokensEstimate,
-        model: "gemini-3-flash-preview",
+        model: actualModelUsed.replace("models/", ""),
       }
     });
 
     return NextResponse.json({
-      results: draftData.map((d, i) => ({
+      results: savedDrafts.map((d, i) => ({
+        id: d.id,
         original: JSON.parse(d.recipientData),
         generated: d.generatedText,
         status: d.status,

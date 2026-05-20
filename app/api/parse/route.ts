@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/[...nextauth]/route";
 import { getFreshAccessToken } from "@/lib/google-auth";
+import { getModelFallbackChain, DEFAULT_MODEL, markModelDeprecated } from "@/lib/gemini-models";
 
 export async function POST(request: Request) {
   try {
@@ -37,33 +38,53 @@ Spreadsheet Data (showing up to 100 rows):
 ${JSON.stringify(sample, null, 2)}
 `;
 
-    const mId = "models/gemini-3-flash-preview";
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${mId}:generateContent`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${userAccessToken}`
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" }
-      })
-    });
+    // ── Smart Model Fallback (auto-fetch newest → oldest) ──────
+    const modelsToTry = await getModelFallbackChain(DEFAULT_MODEL, `Bearer ${userAccessToken}`);
+    const defaultRules = { isTransposed: false, headerRowIndex: 0, dataStartRowIndex: 1 };
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      console.error("AI Parsing failed:", err);
-      return NextResponse.json({ rules: { isTransposed: false, headerRowIndex: 0, dataStartRowIndex: 1 } });
+    for (const mId of modelsToTry) {
+      try {
+        console.log(`[Parse] Trying model ${mId}...`);
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${mId}:generateContent`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${userAccessToken}`
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          const errMsg = err?.error?.message || "";
+          const isDeprecated = res.status === 404 || errMsg.toLowerCase().includes("deprecated") || errMsg.toLowerCase().includes("not found");
+          if (isDeprecated) markModelDeprecated(mId);
+          console.warn(`${isDeprecated ? "⚠️ Deprecated" : "Failed"}: ${mId} (${res.status})${errMsg ? `: ${errMsg}` : ""}`);
+          continue;
+        }
+
+        const json = await res.json();
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        const match = text.match(/\{[\s\S]*\}/);
+        const rules = JSON.parse(match ? match[0] : text);
+
+        console.log(`[Parse] Success with model ${mId}`);
+        return NextResponse.json({ rules });
+      } catch (e) {
+        console.warn(`[Parse] Error with model ${mId}:`, e);
+        continue;
+      }
     }
 
-    const json = await res.json();
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-    const match = text.match(/\{[\s\S]*\}/);
-    const rules = JSON.parse(match ? match[0] : text);
-
-    return NextResponse.json({ rules });
+    // All models failed — return safe defaults
+    console.error("[Parse] All models failed, returning defaults");
+    return NextResponse.json({ rules: defaultRules });
   } catch (error: any) {
     console.error("AI Parse route error:", error);
     return NextResponse.json({ rules: { isTransposed: false, headerRowIndex: 0, dataStartRowIndex: 1 } });
   }
 }
+
